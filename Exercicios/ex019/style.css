@@ -1,0 +1,25 @@
+@charset "UTF-8";
+
+body{
+    background-color:#a3cfeb;
+}
+h1{
+    font-family: Arial, Helvetica, sans-serif;
+    color: #306586;
+}
+h2{
+    font-family: 'Lucida Sans', 'Lucida Sans Regular', 'Lucida Grande', 'Lucida Sans Unicode', Geneva, Verdana, sans-serif;
+    color: #2e6b91;
+}
+
+h1#principal {
+    text-align: center;
+    background-color: #3D7FA8;
+    color: #e9f7ff;
+
+}
+
+h3{
+    color: rgb(35, 64, 126);
+}
+
