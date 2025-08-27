@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Aventura no Labirinto do Conhecimento — Protótipo</title>
+  <style>
+    *{box-sizing:border-box} body{margin:0;font-family:system-ui,Arial}
+    header{padding:12px 16px;background:#111;color:#fff;display:flex;justify-content:space-between;align-items:center}
+    #hud{display:flex;gap:12px;align-items:center}
+    #hud span{padding:4px 8px;border:1px solid #444;border-radius:8px}
+    #game{display:flex;justify-content:center;padding:12px;background:#1a1a1a}
+    canvas{background:#222;border:2px solid #444;border-radius:12px;max-width:100%;height:auto}
+    #foot{padding:8px 16px;color:#666;font-size:14px}
+    /* Quiz modal */
+    .overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center}
+    .modal{background:white;border-radius:14px;max-width:520px;width:92%;padding:18px;box-shadow:0 10px 30px rgba(0,0,0,.3)}
+    .modal h2{margin-top:0}
+    .answers{display:grid;gap:8px;margin-top:10px}
+    .answers button{padding:10px;border-radius:10px;border:1px solid #ccc;cursor:pointer}
+    .ok{background:#e8f9ee;border-color:#9ad1b1}
+    .err{background:#fdecec;border-color:#e1a6a6}
+    .actions{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
+  </style>
+</head>
+<body>
+  <header>
+    <strong>Labirinto do Conhecimento — Fase 1</strong>
+    <div id="hud">
+      <span id="key">🔑 0/1</span>
+      <span id="status">Use ← → para mover, Espaço para pular</span>
+    </div>
+  </header>
+
+  <main id="game">
+    <canvas id="canvas" width="900" height="420" aria-label="Área do jogo"></canvas>
+  </main>
+  <div id="foot">Progresso salvo automaticamente ao concluir a fase.</div>
+
+  <!-- Quiz -->
+  <div class="overlay" id="quiz">
+    <div class="modal">
+      <h2>Desafio de Conhecimento</h2>
+      <p>Qual é a estrutura de dados ideal para armazenar pares chave→valor?</p>
+      <div class="answers">
+        <button data-ok="0">Fila (Queue)</button>
+        <button data-ok="0">Lista ligada (Linked List)</button>
+        <button data-ok="1">Tabela hash (Hash Map)</button>
+        <button data-ok="0">Pilha (Stack)</button>
+      </div>
+      <div class="actions">
+        <button id="retry" style="display:none">Tentar novamente</button>
+        <button id="next" style="display:none">Concluir fase</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  // ======= Estado básico do jogo =======
+  const cvs = document.getElementById('canvas');
+  const ctx = cvs.getContext('2d');
+  const hudKey = document.getElementById('key');
+  const hudStatus = document.getElementById('status');
+
+  const world = { w: cvs.width, h: cvs.height, gravity: 0.7 };
+  const keys = { left:false, right:false, jump:false };
+
+  const player = { x:60, y:0, w:28, h:36, vx:0, vy:0, speed:3.2, onGround:false, color:'#7dd3fc' };
+
+  const platforms = [
+    {x:0,y:380,w:900,h:40}, {x:120,y:320,w:160,h:16}, {x:340,y:270,w:160,h:16},
+    {x:560,y:230,w:160,h:16}, {x:760,y:190,w:100,h:16}
+  ];
+
+  const keyItem = { x:370, y:238, r:8, got:false };
+  const door = { x:820, y:150, w:28, h:40 };
+
+  let hasKey = false; // atende HU1
+
+  // ======= Entrada =======
+  addEventListener('keydown', e=>{
+    if(['ArrowLeft','a','A'].includes(e.key)) keys.left=true;
+    if(['ArrowRight','d','D'].includes(e.key)) keys.right=true;
+    if([' ','ArrowUp','w','W'].includes(e.key)) keys.jump=true;
+  });
+  addEventListener('keyup', e=>{
+    if(['ArrowLeft','a','A'].includes(e.key)) keys.left=false;
+    if(['ArrowRight','d','D'].includes(e.key)) keys.right=false;
+    if([' ','ArrowUp','w','W'].includes(e.key)) keys.jump=false;
+  });
+
+  // ======= Física simples =======
+  function aabb(a,b){return a.x < b.x+b.w && a.x+a.w > b.x && a.y < b.y+b.h && a.y+a.h > b.y}
+
+  function update(){
+    // movimento horizontal
+    player.vx = (keys.right?1:0 - (keys.left?1:0)) * player.speed;
+
+    // gravidade e salto
+    player.vy += world.gravity;
+    if(keys.jump && player.onGround){ player.vy = -11; player.onGround = false; }
+
+    // aplicar velocidades
+    player.x += player.vx; player.y += player.vy;
+
+    // colisões com plataformas
+    player.onGround = false;
+    for(const p of platforms){
+      // eixo Y
+      if(player.x < p.x+p.w && player.x+player.w > p.x){
+        // descendo e colidindo pelo topo
+        if(player.y+player.h <= p.y+10 && player.y+player.h+player.vy >= p.y){
+          player.y = p.y - player.h; player.vy = 0; player.onGround = true;
+        }
+      }
+      // limitar por baixo/lados (simples)
+      if(aabb(player,p)){
+        if(player.x+player.w/2 < p.x) player.x = p.x - player.w; // esquerda
+        if(player.x+player.w/2 > p.x+p.w) player.x = p.x+p.w;    // direita
+      }
+    }
+
+    // chão/limites
+    if(player.y+player.h > world.h){ player.y = world.h-player.h; player.vy=0; player.onGround=true; }
+    player.x = Math.max(0, Math.min(world.w-player.w, player.x));
+
+    // pegar chave
+    if(!keyItem.got){
+      const dx = (player.x+player.w/2) - keyItem.x;
+      const dy = (player.y+player.h/2) - keyItem.y;
+      const dist = Math.hypot(dx,dy);
+      if(dist < 22){ keyItem.got = true; hasKey = true; hudKey.textContent='🔑 1/1'; hudStatus.textContent='Vá até a porta'; }
+    }
+
+    // porta => abre quiz se tiver chave
+    if(hasKey && aabb(player, door)){
+      openQuiz();
+    }
+  }
+
+  function draw(){
+    ctx.clearRect(0,0,world.w,world.h);
+    // fundo
+    ctx.fillStyle = '#0b1220'; ctx.fillRect(0,0,world.w,world.h);
+
+    // plataformas
+    ctx.fillStyle = '#39465e';
+    for(const p of platforms){ ctx.fillRect(p.x,p.y,p.w,p.h); }
+
+    // chave
+    if(!keyItem.got){
+      ctx.fillStyle = '#facc15';
+      ctx.beginPath(); ctx.arc(keyItem.x, keyItem.y, keyItem.r, 0, Math.PI*2); ctx.fill();
+    }
+
+    // porta
+    ctx.fillStyle = hasKey? '#22c55e' : '#999';
+    ctx.fillRect(door.x,door.y,door.w,door.h);
+
+    // jogador
+    ctx.fillStyle = player.color; ctx.fillRect(player.x,player.y,player.w,player.h);
+  }
+
+  function loop(){ update(); draw(); requestAnimationFrame(loop); }
+  loop();
+
+  // ======= Quiz (HU2) =======
+  const overlay=document.getElementById('quiz');
+  const nextBtn=document.getElementById('next');
+  const retryBtn=document.getElementById('retry');
+
+  function openQuiz(){
+    hudStatus.textContent='Responda ao desafio!';
+    overlay.style.display='flex';
+  }
+
+  document.querySelectorAll('.answers button').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      const ok = btn.dataset.ok === '1';
+      if(ok){
+        btn.classList.add('ok'); nextBtn.style.display='inline-block'; retryBtn.style.display='none';
+      } else {
+        btn.classList.add('err'); retryBtn.style.display='inline-block';
+      }
+    })
+  })
+
+  retryBtn.addEventListener('click',()=>{
+    document.querySelectorAll('.answers button').forEach(b=>b.classList.remove('ok','err'));
+    retryBtn.style.display='none';
+  });
+
+  nextBtn.addEventListener('click',()=>{
+    overlay.style.display='none';
+    // RNF3: salvar progresso local
+    const prog = JSON.parse(localStorage.getItem('labirintoProgresso')||'{}');
+    prog.fase1 = { concluida:true, data:new Date().toISOString() };
+    localStorage.setItem('labirintoProgresso', JSON.stringify(prog));
+    hudStatus.textContent='Fase concluída! Progresso salvo.';
+  });
+  </script>
+</body>
+</html>
